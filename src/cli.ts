@@ -287,12 +287,12 @@ program
 	});
 
 export async function generateNextDocId(core: Core): Promise<string> {
+	const config = await core.filesystem.loadConfig();
 	// Load local documents
 	const docs = await core.filesystem.listDocuments();
 	const allIds: string[] = [];
 
 	try {
-		const config = await core.filesystem.loadConfig();
 		const backlogDir = config?.backlogDirectory || "backlog";
 
 		// Skip remote operations if disabled
@@ -343,16 +343,24 @@ export async function generateNextDocId(core: Core): Promise<string> {
 		}
 	}
 
-	return `doc-${max + 1}`;
+	const nextIdNumber = max + 1;
+	const padding = config?.zeroPaddedIds;
+
+	if (padding && typeof padding === "number" && padding > 0) {
+		const paddedId = String(nextIdNumber).padStart(padding, "0");
+		return `doc-${paddedId}`;
+	}
+
+	return `doc-${nextIdNumber}`;
 }
 
 export async function generateNextDecisionId(core: Core): Promise<string> {
+	const config = await core.filesystem.loadConfig();
 	// Load local decisions
 	const decisions = await core.filesystem.listDecisions();
 	const allIds: string[] = [];
 
 	try {
-		const config = await core.filesystem.loadConfig();
 		const backlogDir = config?.backlogDirectory || "backlog";
 
 		// Skip remote operations if disabled
@@ -403,17 +411,25 @@ export async function generateNextDecisionId(core: Core): Promise<string> {
 		}
 	}
 
-	return `decision-${max + 1}`;
+	const nextIdNumber = max + 1;
+	const padding = config?.zeroPaddedIds;
+
+	if (padding && typeof padding === "number" && padding > 0) {
+		const paddedId = String(nextIdNumber).padStart(padding, "0");
+		return `decision-${paddedId}`;
+	}
+
+	return `decision-${nextIdNumber}`;
 }
 
 async function generateNextId(core: Core, parent?: string): Promise<string> {
+	const config = await core.filesystem.loadConfig();
 	// Load local tasks and drafts in parallel
 	const [tasks, drafts] = await Promise.all([core.filesystem.listTasks(), core.filesystem.listDrafts()]);
 	const all = [...tasks, ...drafts];
 	const allIds: string[] = [];
 
 	try {
-		const config = await core.filesystem.loadConfig();
 		const backlogDir = config?.backlogDirectory || "backlog";
 
 		// Skip remote operations if disabled
@@ -466,7 +482,17 @@ async function generateNextId(core: Core, parent?: string): Promise<string> {
 				if (num > max) max = num;
 			}
 		}
-		return `${prefix}.${max + 1}`;
+		const nextSubIdNumber = max + 1;
+		const padding = config?.zeroPaddedIds;
+
+		if (padding && typeof padding === "number" && padding > 0) {
+			// Pad sub-tasks to 2 digits. This supports up to 99 sub-tasks,
+			// which is a reasonable limit and keeps IDs from getting too long.
+			const paddedSubId = String(nextSubIdNumber).padStart(2, "0");
+			return `${prefix}.${paddedSubId}`;
+		}
+
+		return `${prefix}.${nextSubIdNumber}`;
 	}
 
 	let max = 0;
@@ -484,7 +510,15 @@ async function generateNextId(core: Core, parent?: string): Promise<string> {
 			if (num > max) max = num;
 		}
 	}
-	return `task-${max + 1}`;
+	const nextIdNumber = max + 1;
+	const padding = config?.zeroPaddedIds;
+
+	if (padding && typeof padding === "number" && padding > 0) {
+		const paddedId = String(nextIdNumber).padStart(padding, "0");
+		return `task-${paddedId}`;
+	}
+
+	return `task-${nextIdNumber}`;
 }
 
 function normalizeDependencies(dependencies: unknown): string[] {
@@ -1568,10 +1602,13 @@ configCmd
 				case "autoCommit":
 					console.log(config.autoCommit?.toString() || "");
 					break;
+				case "zeroPaddedIds":
+					console.log(config.zeroPaddedIds?.toString() || "(disabled)");
+					break;
 				default:
 					console.error(`Unknown config key: ${key}`);
 					console.error(
-						"Available keys: defaultEditor, projectName, defaultStatus, statuses, labels, milestones, dateFormat, maxColumnWidth, backlogDirectory, defaultPort, autoOpenBrowser, remoteOperations, autoCommit",
+						"Available keys: defaultEditor, projectName, defaultStatus, statuses, labels, milestones, dateFormat, maxColumnWidth, backlogDirectory, defaultPort, autoOpenBrowser, remoteOperations, autoCommit, zeroPaddedIds",
 					);
 					process.exit(1);
 			}
@@ -1675,6 +1712,16 @@ configCmd
 					}
 					break;
 				}
+				case "zeroPaddedIds": {
+					const padding = Number.parseInt(value, 10);
+					if (Number.isNaN(padding) || padding < 0) {
+						console.error("zeroPaddedIds must be a non-negative number.");
+						process.exit(1);
+					}
+					// Set to undefined if 0 to remove it from config
+					config.zeroPaddedIds = padding > 0 ? padding : undefined;
+					break;
+				}
 				case "statuses":
 				case "labels":
 				case "milestones":
@@ -1685,7 +1732,7 @@ configCmd
 				default:
 					console.error(`Unknown config key: ${key}`);
 					console.error(
-						"Available keys: defaultEditor, projectName, defaultStatus, dateFormat, maxColumnWidth, backlogDirectory, autoOpenBrowser, defaultPort, remoteOperations",
+						"Available keys: defaultEditor, projectName, defaultStatus, dateFormat, maxColumnWidth, backlogDirectory, autoOpenBrowser, defaultPort, remoteOperations, autoCommit, zeroPaddedIds",
 					);
 					process.exit(1);
 			}
@@ -1726,6 +1773,7 @@ configCmd
 			console.log(`  defaultPort: ${config.defaultPort ?? "(not set)"}`);
 			console.log(`  remoteOperations: ${config.remoteOperations ?? "(not set)"}`);
 			console.log(`  autoCommit: ${config.autoCommit ?? "(not set)"}`);
+			console.log(`  zeroPaddedIds: ${config.zeroPaddedIds ?? "(disabled)"}`);
 		} catch (err) {
 			console.error("Failed to list config values", err);
 			process.exitCode = 1;
